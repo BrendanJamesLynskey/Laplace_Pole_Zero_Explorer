@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laplace Pole-Zero Explorer</title>
+<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+<style>
+:root {
+  --bg: #0f0f13;
+  --surface: #1a1a24;
+  --border: #2a2a3a;
+  --text: #e0e0e8;
+  --muted: #8888a0;
+  --accent: #6c8cff;
+  --accent2: #ff6c8c;
+  --accent3: #6cffc8;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+header {
+  text-align: center;
+  padding: 28px 20px 12px;
+}
+header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2), var(--accent3));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 4px;
+}
+header p { color: var(--muted); font-size: 0.95rem; }
+
+.controls {
+  max-width: 1400px;
+  margin: 16px auto;
+  padding: 0 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+}
+.preset-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+.pill {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.pill:hover { border-color: var(--accent); color: var(--text); }
+.pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.toolbar {
+  max-width: 1400px;
+  margin: 10px auto;
+  padding: 0 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+.btn {
+  padding: 7px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.active-pole { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.btn.active-zero { background: var(--accent3); border-color: var(--accent3); color: #111; }
+.btn.clear { border-color: #ff4455; color: #ff4455; }
+.btn.clear:hover { background: #ff4455; color: #fff; }
+
+.status-bar {
+  max-width: 1400px;
+  margin: 10px auto;
+  padding: 0 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+.stability {
+  padding: 4px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.stability.stable { background: rgba(108,255,200,0.15); color: var(--accent3); border: 1px solid var(--accent3); }
+.stability.unstable { background: rgba(255,68,85,0.15); color: #ff4455; border: 1px solid #ff4455; }
+#tf-display {
+  font-family: 'Courier New', monospace;
+  color: var(--accent);
+  font-size: 0.85rem;
+  background: var(--surface);
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  max-width: 90vw;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.grid {
+  max-width: 1400px;
+  margin: 16px auto;
+  padding: 0 20px 40px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 16px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+  overflow: hidden;
+}
+.card.splane { grid-row: 1 / 3; }
+.card h2 {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+.plot { width: 100%; }
+#splane-plot { height: 560px; }
+#impulse-plot { height: 270px; }
+#bode-plot { height: 270px; }
+
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; }
+  .card.splane { grid-row: auto; }
+  #splane-plot { height: 400px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Laplace Pole-Zero Explorer</h1>
+  <p>Click the s-plane to place poles and zeros. Watch the impulse response and Bode plots update live.</p>
+</header>
+
+<div class="controls">
+  <div class="preset-pills" id="presets"></div>
+</div>
+
+<div class="toolbar">
+  <button class="btn active-pole" id="btn-pole" onclick="setMode('pole')">Add Poles (x)</button>
+  <button class="btn" id="btn-zero" onclick="setMode('zero')">Add Zeros (o)</button>
+  <button class="btn clear" onclick="clearAll()">Clear All</button>
+</div>
+
+<div class="status-bar">
+  <span class="stability stable" id="stability">STABLE</span>
+  <span id="tf-display">H(s) = 1</span>
+</div>
+
+<div class="grid">
+  <div class="card splane">
+    <h2>S-Plane (Pole-Zero Map)</h2>
+    <div id="splane-plot" class="plot"></div>
+  </div>
+  <div class="card">
+    <h2>Impulse Response h(t)</h2>
+    <div id="impulse-plot" class="plot"></div>
+  </div>
+  <div class="card">
+    <h2>Bode Plot</h2>
+    <div id="bode-plot" class="plot"></div>
+  </div>
+</div>
+
+<script>
+// ───── State ─────
+let poles = [];
+let zeros = [];
+let gain = 1;
+let mode = 'pole'; // 'pole' or 'zero'
+
+const PRESETS = [
+  { name: 'First-order LP', poles: [{ re: -1, im: 0 }], zeros: [], gain: 1 },
+  { name: '2nd-order Underdamped', poles: [{ re: -0.5, im: 2 }, { re: -0.5, im: -2 }], zeros: [], gain: 4.25 },
+  { name: '2nd-order Overdamped', poles: [{ re: -1, im: 0 }, { re: -3, im: 0 }], zeros: [], gain: 3 },
+  { name: 'Notch Filter', poles: [{ re: -0.5, im: 3 }, { re: -0.5, im: -3 }], zeros: [{ re: 0, im: 3 }, { re: 0, im: -3 }], gain: 1 },
+  { name: 'Lead Compensator', poles: [{ re: -10, im: 0 }], zeros: [{ re: -2, im: 0 }], gain: 5 },
+  { name: 'Lag Compensator', poles: [{ re: -0.5, im: 0 }], zeros: [{ re: -5, im: 0 }], gain: 0.1 },
+  { name: 'PID Controller', poles: [{ re: 0, im: 0 }], zeros: [{ re: -1, im: 0 }, { re: -5, im: 0 }], gain: 1 },
+  { name: 'Resonant Circuit', poles: [{ re: -0.2, im: 5 }, { re: -0.2, im: -5 }], zeros: [{ re: 0, im: 0 }], gain: 1 },
+  { name: 'Butterworth 2nd', poles: [{ re: -0.7071, im: 0.7071 }, { re: -0.7071, im: -0.7071 }], zeros: [], gain: 1 },
+  { name: 'All-pass Filter', poles: [{ re: -2, im: 0 }], zeros: [{ re: 2, im: 0 }], gain: 1 },
+];
+
+const plotBg = '#12121a';
+const gridColor = '#222233';
+const plotLayout = {
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor: plotBg,
+  font: { color: '#e0e0e8', family: "'Segoe UI', system-ui, sans-serif", size: 12 },
+  margin: { l: 55, r: 20, t: 10, b: 45 },
+  xaxis: { gridcolor: gridColor, zerolinecolor: '#444466', zerolinewidth: 1 },
+  yaxis: { gridcolor: gridColor, zerolinecolor: '#444466', zerolinewidth: 1 },
+};
+
+// ───── Presets UI ─────
+const presetsEl = document.getElementById('presets');
+PRESETS.forEach((p, i) => {
+  const btn = document.createElement('button');
+  btn.className = 'pill';
+  btn.textContent = p.name;
+  btn.onclick = () => loadPreset(i);
+  presetsEl.appendChild(btn);
+});
+
+function loadPreset(i) {
+  document.querySelectorAll('.pill').forEach((b, j) => b.classList.toggle('active', j === i));
+  const p = PRESETS[i];
+  poles = p.poles.map(c => ({ re: c.re, im: c.im }));
+  zeros = p.zeros.map(c => ({ re: c.re, im: c.im }));
+  gain = p.gain;
+  updateAll();
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-pole').className = 'btn' + (m === 'pole' ? ' active-pole' : '');
+  document.getElementById('btn-zero').className = 'btn' + (m === 'zero' ? ' active-zero' : '');
+}
+
+function clearAll() {
+  poles = []; zeros = []; gain = 1;
+  document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+  updateAll();
+}
+
+// ───── Complex arithmetic helpers ─────
+function cmul(a, b) { return { re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re }; }
+function cdiv(a, b) {
+  const d = b.re * b.re + b.im * b.im;
+  if (d === 0) return { re: 1e12, im: 0 };
+  return { re: (a.re * b.re + a.im * b.im) / d, im: (a.im * b.re - a.re * b.im) / d };
+}
+function csub(a, b) { return { re: a.re - b.re, im: a.im - b.im }; }
+function cadd(a, b) { return { re: a.re + b.re, im: a.im + b.im }; }
+function cabs(a) { return Math.sqrt(a.re * a.re + a.im * a.im); }
+function carg(a) { return Math.atan2(a.im, a.re); }
+function cexp(a) { const r = Math.exp(a.re); return { re: r * Math.cos(a.im), im: r * Math.sin(a.im) }; }
+function cscale(a, s) { return { re: a.re * s, im: a.im * s }; }
+
+// ───── Transfer function evaluation ─────
+function evalH(s) {
+  let num = { re: gain, im: 0 };
+  for (const z of zeros) num = cmul(num, csub(s, { re: z.re, im: z.im }));
+  let den = { re: 1, im: 0 };
+  for (const p of poles) den = cmul(den, csub(s, { re: p.re, im: p.im }));
+  return cdiv(num, den);
+}
+
+// ───── Impulse response via partial fractions ─────
+function computeImpulse(tVals) {
+  if (poles.length === 0) return tVals.map(() => (zeros.length === 0 ? gain : 0));
+
+  // Check for repeated poles (within tolerance)
+  const tol = 1e-6;
+  const used = new Array(poles.length).fill(false);
+  const groups = []; // array of { pole, multiplicity }
+
+  for (let i = 0; i < poles.length; i++) {
+    if (used[i]) continue;
+    let mult = 1;
+    used[i] = true;
+    for (let j = i + 1; j < poles.length; j++) {
+      if (!used[j] && Math.abs(poles[i].re - poles[j].re) < tol && Math.abs(poles[i].im - poles[j].im) < tol) {
+        mult++;
+        used[j] = true;
+      }
+    }
+    groups.push({ pole: poles[i], mult });
+  }
+
+  // For simple (non-repeated) poles, compute residues
+  // For systems with more zeros than poles minus 1, there's a direct term — skip for simplicity
+  if (zeros.length >= poles.length) {
+    // Improper or biproper — just do numerical evaluation
+    return computeImpulseNumerical(tVals);
+  }
+
+  // All simple poles case (most common with presets)
+  let allSimple = groups.every(g => g.mult === 1);
+  if (!allSimple) return computeImpulseNumerical(tVals);
+
+  // Compute residues: R_k = lim_{s->p_k} (s - p_k) * H(s)
+  const residues = [];
+  for (const g of groups) {
+    const pk = g.pole;
+    let num = { re: gain, im: 0 };
+    for (const z of zeros) num = cmul(num, csub(pk, { re: z.re, im: z.im }));
+    let den = { re: 1, im: 0 };
+    for (const p of poles) {
+      const diff = csub(pk, { re: p.re, im: p.im });
+      if (cabs(diff) > tol) den = cmul(den, diff);
+    }
+    residues.push(cdiv(num, den));
+  }
+
+  // h(t) = sum_k R_k * exp(p_k * t)  for t >= 0
+  return tVals.map(t => {
+    if (t < 0) return 0;
+    let val = 0;
+    for (let k = 0; k < groups.length; k++) {
+      const pk = groups[k].pole;
+      const rk = residues[k];
+      const ept = cexp({ re: pk.re * t, im: pk.im * t });
+      const term = cmul(rk, ept);
+      val += term.re; // take real part
+    }
+    return val;
+  });
+}
+
+function computeImpulseNumerical(tVals) {
+  // Numerical inverse via frequency sampling (crude but works for display)
+  const N = 2048;
+  const dt = 0.005;
+  const result = [];
+  for (const t of tVals) {
+    if (t < 0) { result.push(0); continue; }
+    let sum = 0;
+    const dw = 0.05;
+    for (let i = 0; i < N; i++) {
+      const w = (i + 0.5) * dw;
+      const s = { re: 0.5, im: w }; // Bromwich along Re(s) = 0.5
+      const Hs = evalH(s);
+      const est = cexp({ re: s.re * t, im: s.im * t });
+      const integrand = cmul(Hs, est);
+      sum += integrand.re * dw;
+    }
+    result.push(sum / Math.PI);
+  }
+  return result;
+}
+
+// ───── Polynomial display ─────
+function polyString(roots) {
+  if (roots.length === 0) return '1';
+  // Expand polynomial from roots
+  let coeffs = [{ re: 1, im: 0 }]; // highest degree first
+  for (const r of roots) {
+    const newCoeffs = new Array(coeffs.length + 1).fill(null).map(() => ({ re: 0, im: 0 }));
+    for (let i = 0; i < coeffs.length; i++) {
+      newCoeffs[i] = cadd(newCoeffs[i], coeffs[i]); // * s
+      const mr = { re: -r.re, im: -r.im };
+      newCoeffs[i + 1] = cadd(newCoeffs[i + 1], cmul(coeffs[i], mr)); // * (-r)
+    }
+    coeffs = newCoeffs;
+  }
+  // Format: all coefficients should be real for conjugate-paired roots
+  const terms = [];
+  const deg = coeffs.length - 1;
+  for (let i = 0; i <= deg; i++) {
+    const c = Math.round(coeffs[i].re * 1000) / 1000;
+    if (Math.abs(c) < 1e-9) continue;
+    const power = deg - i;
+    let t = '';
+    if (terms.length > 0 && c > 0) t += '+';
+    if (power === 0) { t += c; }
+    else if (Math.abs(c - 1) < 1e-9) { t += (power > 1 ? `s^${power}` : 's'); }
+    else if (Math.abs(c + 1) < 1e-9) { t += (power > 1 ? `-s^${power}` : '-s'); }
+    else { t += c + (power > 1 ? `s^${power}` : 's'); }
+    terms.push(t);
+  }
+  return terms.join(' ') || '1';
+}
+
+function updateTFDisplay() {
+  const num = (gain !== 1 ? gain + ' * ' : '') + '(' + polyString(zeros) + ')';
+  const den = '(' + polyString(poles) + ')';
+  document.getElementById('tf-display').textContent = `H(s) = ${num} / ${den}`;
+}
+
+// ───── Stability check ─────
+function isStable() {
+  return poles.every(p => p.re < 1e-9);
+}
+
+function updateStability() {
+  const el = document.getElementById('stability');
+  if (isStable()) {
+    el.textContent = 'STABLE';
+    el.className = 'stability stable';
+  } else {
+    el.textContent = 'UNSTABLE';
+    el.className = 'stability unstable';
+  }
+}
+
+// ───── Plot: S-Plane ─────
+function plotSPlane() {
+  // Unit circle
+  const circT = [];
+  for (let a = 0; a <= 2 * Math.PI + 0.05; a += 0.05) circT.push(a);
+  const unitCircle = {
+    x: circT.map(a => Math.cos(a)),
+    y: circT.map(a => Math.sin(a)),
+    mode: 'lines',
+    line: { color: '#333355', width: 1, dash: 'dot' },
+    hoverinfo: 'skip',
+    showlegend: false,
+  };
+
+  const poleTrace = {
+    x: poles.map(p => p.re),
+    y: poles.map(p => p.im),
+    mode: 'markers',
+    marker: { symbol: 'x', size: 14, color: '#ff6c8c', line: { width: 2.5, color: '#ff6c8c' } },
+    name: 'Poles',
+    hovertemplate: 'Pole: %{x:.2f} + %{y:.2f}j<extra></extra>',
+  };
+
+  const zeroTrace = {
+    x: zeros.map(z => z.re),
+    y: zeros.map(z => z.im),
+    mode: 'markers',
+    marker: { symbol: 'circle-open', size: 14, color: '#6cffc8', line: { width: 2.5 } },
+    name: 'Zeros',
+    hovertemplate: 'Zero: %{x:.2f} + %{y:.2f}j<extra></extra>',
+  };
+
+  // Axis range
+  const allPts = [...poles, ...zeros, { re: -1, im: 1 }, { re: 1, im: -1 }];
+  const maxR = Math.max(2, ...allPts.map(p => Math.max(Math.abs(p.re), Math.abs(p.im)))) * 1.3;
+
+  const layout = {
+    ...plotLayout,
+    xaxis: { ...plotLayout.xaxis, title: { text: 'Real', font: { size: 12 } }, range: [-maxR, maxR], scaleanchor: 'y' },
+    yaxis: { ...plotLayout.yaxis, title: { text: 'Imaginary', font: { size: 12 } }, range: [-maxR, maxR] },
+    showlegend: false,
+    shapes: [
+      { type: 'line', x0: 0, x1: 0, y0: -maxR, y1: maxR, line: { color: '#555577', width: 1.5 } },
+      { type: 'line', x0: -maxR, x1: maxR, y0: 0, y1: 0, line: { color: '#555577', width: 1.5 } },
+      // Shade left-half plane
+      { type: 'rect', x0: -maxR, x1: 0, y0: -maxR, y1: maxR, fillcolor: 'rgba(108,255,200,0.03)', line: { width: 0 } },
+    ],
+  };
+
+  Plotly.react('splane-plot', [unitCircle, poleTrace, zeroTrace], layout, { responsive: true, displayModeBar: false });
+}
+
+// ───── Plot: Impulse Response ─────
+function plotImpulse() {
+  const stable = isStable();
+  const maxT = stable ? 10 : 5;
+  const N = 500;
+  const tVals = [];
+  for (let i = 0; i < N; i++) tVals.push((i / (N - 1)) * maxT);
+
+  const hVals = computeImpulse(tVals);
+
+  // Clamp extreme values for display
+  const clampedH = hVals.map(v => Math.max(-100, Math.min(100, isFinite(v) ? v : 0)));
+
+  const trace = {
+    x: tVals,
+    y: clampedH,
+    mode: 'lines',
+    line: { color: '#6c8cff', width: 2 },
+    fill: 'tozeroy',
+    fillcolor: 'rgba(108,140,255,0.1)',
+    hovertemplate: 't=%{x:.3f}<br>h(t)=%{y:.4f}<extra></extra>',
+  };
+
+  const layout = {
+    ...plotLayout,
+    xaxis: { ...plotLayout.xaxis, title: { text: 'Time (s)', font: { size: 12 } } },
+    yaxis: { ...plotLayout.yaxis, title: { text: 'h(t)', font: { size: 12 } } },
+    showlegend: false,
+  };
+
+  Plotly.react('impulse-plot', [trace], layout, { responsive: true, displayModeBar: false });
+}
+
+// ───── Plot: Bode ─────
+function plotBode() {
+  const N = 500;
+  const wMin = -2, wMax = 3; // log10(omega)
+  const wVals = [];
+  for (let i = 0; i < N; i++) wVals.push(Math.pow(10, wMin + (wMax - wMin) * i / (N - 1)));
+
+  const magDB = [];
+  const phaseDeg = [];
+
+  for (const w of wVals) {
+    const s = { re: 0, im: w };
+    const H = evalH(s);
+    const mag = cabs(H);
+    magDB.push(20 * Math.log10(Math.max(mag, 1e-20)));
+    phaseDeg.push(carg(H) * 180 / Math.PI);
+  }
+
+  // Unwrap phase
+  for (let i = 1; i < phaseDeg.length; i++) {
+    while (phaseDeg[i] - phaseDeg[i - 1] > 180) phaseDeg[i] -= 360;
+    while (phaseDeg[i] - phaseDeg[i - 1] < -180) phaseDeg[i] += 360;
+  }
+
+  const magTrace = {
+    x: wVals,
+    y: magDB,
+    mode: 'lines',
+    line: { color: '#6c8cff', width: 2 },
+    name: 'Magnitude',
+    yaxis: 'y',
+    hovertemplate: 'f=%{x:.2f} rad/s<br>|H|=%{y:.1f} dB<extra></extra>',
+  };
+
+  const phaseTrace = {
+    x: wVals,
+    y: phaseDeg,
+    mode: 'lines',
+    line: { color: '#ff6c8c', width: 2, dash: 'dot' },
+    name: 'Phase',
+    yaxis: 'y2',
+    hovertemplate: 'f=%{x:.2f} rad/s<br>Phase=%{y:.1f} deg<extra></extra>',
+  };
+
+  const layout = {
+    ...plotLayout,
+    xaxis: { ...plotLayout.xaxis, type: 'log', title: { text: 'Frequency (rad/s)', font: { size: 12 } } },
+    yaxis: { ...plotLayout.yaxis, title: { text: 'Magnitude (dB)', font: { size: 12, color: '#6c8cff' } }, side: 'left' },
+    yaxis2: {
+      title: { text: 'Phase (deg)', font: { size: 12, color: '#ff6c8c' } },
+      overlaying: 'y',
+      side: 'right',
+      gridcolor: 'rgba(0,0,0,0)',
+      zerolinecolor: '#444466',
+      font: { color: '#ff6c8c' },
+      tickfont: { color: '#ff6c8c' },
+    },
+    legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(0,0,0,0)', font: { size: 11 } },
+    showlegend: true,
+  };
+
+  Plotly.react('bode-plot', [magTrace, phaseTrace], layout, { responsive: true, displayModeBar: false });
+}
+
+// ───── Update all ─────
+function updateAll() {
+  updateStability();
+  updateTFDisplay();
+  plotSPlane();
+  plotImpulse();
+  plotBode();
+}
+
+// ───── Click handler for s-plane ─────
+function initSPlaneClick() {
+  const el = document.getElementById('splane-plot');
+  el.on('plotly_click', function(data) {
+    if (!data || !data.points || data.points.length === 0) return;
+    const pt = data.points[0];
+    // Ignore clicks on existing markers
+    if (pt.curveNumber > 0) return;
+
+    const re = Math.round(pt.x * 100) / 100;
+    const im = Math.round(pt.y * 100) / 100;
+
+    const arr = mode === 'pole' ? poles : zeros;
+    arr.push({ re, im });
+    // Auto-add conjugate if imaginary part is nonzero
+    if (Math.abs(im) > 0.01) {
+      arr.push({ re, im: -im });
+    }
+
+    document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+    updateAll();
+  });
+}
+
+// ───── Init ─────
+updateAll();
+initSPlaneClick();
+// Load a nice default
+loadPreset(1);
+</script>
+</body>
+</html>
